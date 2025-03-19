@@ -108,7 +108,11 @@ fn main_entry() -> eyre::Result<()> {
             let file_name = filename_table.get_file_name(entry.hash()).unwrap().clone();
             {
                 let mut pak_writer = pak_writer_mtx.lock();
-                pak_writer.start_file(file_name, FileOptions::default())?;
+                // clone attributes from original file
+                pak_writer.start_file(
+                    file_name,
+                    FileOptions::default().with_unk_attr(*entry.unk_attr()),
+                )?;
                 pak_writer.write_all(&tex_bytes)?;
             }
             bar.inc(1);
