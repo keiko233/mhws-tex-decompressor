@@ -1,6 +1,6 @@
 [package]
 name = "mhws-tex-decompressor"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -11,8 +11,8 @@ edition = "2024"
 re-tex = { git = "https://github.com/eigeen/re-tex.git", branch = "main" }
 ree-pak-core = { git = "https://github.com/eigeen/ree-pak-rs.git", branch = "main" }
 
-dialoguer = "0.11.0"
-eyre = "0.6.12"
-indicatif = "0.17.11"
-rayon = "1.10.0"
-parking_lot = "0.12.3"
+dialoguer = "0.11"
+eyre = "0.6"
+indicatif = "0.17"
+rayon = "1.10"
+parking_lot = "0.12"

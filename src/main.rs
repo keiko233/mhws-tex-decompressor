@@ -45,9 +45,7 @@ fn main_entry() -> eyre::Result<()> {
     println!("Loading embedded file name table...");
     let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
 
-    let file_path =
-        "E:/SteamLibrary/steamapps/common/MonsterHunterWilds/re_chunk_000.pak.sub_000.pak";
-    let file = fs::File::open(file_path)?;
+    let file = fs::File::open(input_path)?;
     let mut reader = io::BufReader::new(file);
 
     println!("Reading pak archive...");
