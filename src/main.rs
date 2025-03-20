@@ -9,17 +9,22 @@ use std::{
     time::Duration,
 };
 
-use dialoguer::{Input, theme::ColorfulTheme};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use re_tex::tex::Tex;
-use ree_pak_core::{filename::FileNameTable, read::archive::PakArchiveReader, write::FileOptions};
+use ree_pak_core::{
+    filename::{FileNameExt, FileNameTable},
+    pak::PakEntry,
+    read::archive::PakArchiveReader,
+    write::FileOptions,
+};
 
 const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
 
 fn main() {
-    println!("Version {}. Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
+    println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
 
     if let Err(e) = main_entry() {
         eprintln!("Error: {e}");
@@ -36,11 +41,30 @@ fn main_entry() -> eyre::Result<()> {
         .interact_text()
         .unwrap();
 
-    println!("Input file: {}", input);
     let input_path = Path::new(&input);
     if !input_path.is_file() {
         eyre::bail!("input file not exists.");
     }
+
+    const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
+
+    let use_full_package_mode = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(
+            "Package all files, including non-tex parts (suitable for replacing original files)",
+        )
+        .default(0)
+        .items(&FALSE_TRUE_SELECTION)
+        .interact()
+        .unwrap();
+    let use_full_package_mode = use_full_package_mode == 1;
+
+    let use_feature_clone = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Clone feature flags from original file? (experimental)")
+        .default(0)
+        .items(&FALSE_TRUE_SELECTION)
+        .interact()
+        .unwrap();
+    let use_feature_clone = use_feature_clone == 1;
 
     println!("Loading embedded file name table...");
     let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
@@ -54,17 +78,16 @@ fn main_entry() -> eyre::Result<()> {
     let archive_reader_mtx = Mutex::new(archive_reader);
 
     // filtered entries
-    println!("Filtering entries...");
-    let entries = pak_archive
-        .entries()
-        .iter()
-        .filter(|entry| {
-            let Some(file_name) = filename_table.get_file_name(entry.hash()) else {
-                return false;
-            };
-            file_name.get_name().ends_with(".tex.241106027")
-        })
-        .collect::<Vec<_>>();
+    let entries = if use_full_package_mode {
+        pak_archive.entries().iter().collect::<Vec<_>>()
+    } else {
+        println!("Filtering entries...");
+        pak_archive
+            .entries()
+            .iter()
+            .filter(|entry| is_tex_file(entry.hash(), &filename_table))
+            .collect::<Vec<_>>()
+    };
 
     // new pak archive
     let output_path = input_path.with_extension("uncompressed.pak");
@@ -97,24 +120,37 @@ fn main_entry() -> eyre::Result<()> {
                 let mut archive_reader = archive_reader_mtx.lock();
                 archive_reader.owned_entry_reader(entry.clone())?
             };
-            let mut tex = Tex::from_reader(&mut entry_reader)?;
-            // decompress mipmaps
-            tex.batch_decompress()?;
 
-            let tex_bytes = tex.as_bytes()?;
-            bytes_written.fetch_add(tex_bytes.len() as usize, Ordering::SeqCst);
-
-            // save file
-            let file_name = filename_table.get_file_name(entry.hash()).unwrap().clone();
-            {
+            if !is_tex_file(entry.hash(), &filename_table) {
+                // plain file, just copy
+                let mut buf = vec![];
+                std::io::copy(&mut entry_reader, &mut buf)?;
                 let mut pak_writer = pak_writer_mtx.lock();
-                // clone attributes from original file
-                pak_writer.start_file(
-                    file_name,
-                    FileOptions::default().with_unk_attr(*entry.unk_attr()),
+                let write_bytes = write_to_pak(
+                    &mut pak_writer,
+                    entry,
+                    entry.hash(),
+                    &buf,
+                    use_feature_clone,
                 )?;
-                pak_writer.write_all(&tex_bytes)?;
+                bytes_written.fetch_add(write_bytes, Ordering::SeqCst);
+            } else {
+                let mut tex = Tex::from_reader(&mut entry_reader)?;
+                // decompress mipmaps
+                tex.batch_decompress()?;
+
+                let tex_bytes = tex.as_bytes()?;
+                let mut pak_writer = pak_writer_mtx.lock();
+                let write_bytes = write_to_pak(
+                    &mut pak_writer,
+                    entry,
+                    entry.hash(),
+                    &tex_bytes,
+                    use_feature_clone,
+                )?;
+                bytes_written.fetch_add(write_bytes, Ordering::SeqCst);
             }
+
             bar.inc(1);
             if bar.position() % 100 == 0 {
                 bar.set_message(
@@ -143,6 +179,32 @@ fn main_entry() -> eyre::Result<()> {
     );
 
     Ok(())
+}
+
+fn is_tex_file(hash: u64, file_name_table: &FileNameTable) -> bool {
+    let Some(file_name) = file_name_table.get_file_name(hash) else {
+        return false;
+    };
+    file_name.get_name().ends_with(".tex.241106027")
+}
+
+fn write_to_pak<W>(
+    writer: &mut ree_pak_core::write::PakWriter<W>,
+    entry: &PakEntry,
+    file_name: impl FileNameExt,
+    data: &[u8],
+    use_feature_clone: bool,
+) -> eyre::Result<usize>
+where
+    W: io::Write + io::Seek,
+{
+    let mut file_options = FileOptions::default();
+    if use_feature_clone {
+        file_options = file_options.with_unk_attr(*entry.unk_attr())
+    }
+    writer.start_file(file_name, file_options)?;
+    writer.write_all(data)?;
+    Ok(data.len())
 }
 
 fn wait_for_exit() {
