@@ -31,6 +31,7 @@ fn main() {
         wait_for_exit();
         std::process::exit(1);
     }
+    wait_for_exit();
 }
 
 fn main_entry() -> eyre::Result<()> {
