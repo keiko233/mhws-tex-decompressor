@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use colored::Colorize;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
@@ -24,14 +25,22 @@ use ree_pak_core::{
 const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
 
 fn main() {
+    std::panic::set_hook(Box::new(panic_hook));
+
     println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
 
     if let Err(e) = main_entry() {
-        eprintln!("Error: {e}");
+        eprintln!("{}: {}", "Error".red().bold(), e);
         wait_for_exit();
         std::process::exit(1);
     }
     wait_for_exit();
+}
+
+fn panic_hook(info: &std::panic::PanicHookInfo) {
+    eprintln!("{}: {}", "Panic".red().bold(), info);
+    wait_for_exit();
+    std::process::exit(1);
 }
 
 fn main_entry() -> eyre::Result<()> {
@@ -52,9 +61,7 @@ fn main_entry() -> eyre::Result<()> {
     const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
 
     let use_full_package_mode = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt(
-            "Package all files, including non-tex parts (suitable for replacing original files)",
-        )
+        .with_prompt("Package all files, including non-tex files (for replacing original files)")
         .default(0)
         .items(&FALSE_TRUE_SELECTION)
         .interact()
@@ -62,8 +69,8 @@ fn main_entry() -> eyre::Result<()> {
     let use_full_package_mode = use_full_package_mode == 1;
 
     let use_feature_clone = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Clone feature flags from original file? (experimental)")
-        .default(0)
+        .with_prompt("Clone feature flags from original file?")
+        .default(1)
         .items(&FALSE_TRUE_SELECTION)
         .interact()
         .unwrap();
@@ -176,10 +183,12 @@ fn main_entry() -> eyre::Result<()> {
     };
 
     bar.finish();
-    println!("Done!");
-    println!(
-        "You should rename the output file like `re_chunk_000.pak.sub_000.pak.patch_xxx.pak`, or manage it by your favorite mod manager."
-    );
+    println!("{}", "Done!".cyan().bold());
+    if !use_full_package_mode {
+        println!(
+            "You should rename the output file like `re_chunk_000.pak.sub_000.pak.patch_xxx.pak`, or manage it by your favorite mod manager."
+        );
+    }
 
     Ok(())
 }
@@ -212,6 +221,7 @@ where
 
 fn wait_for_exit() {
     let _: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Press Enter to exit")
         .allow_empty(true)
         .interact_text()
         .unwrap();
