@@ -40,7 +40,9 @@ fn main_entry() -> eyre::Result<()> {
         .default("re_chunk_000.pak.sub_000.pak".to_string())
         .with_prompt("Input .pak file path")
         .interact_text()
-        .unwrap();
+        .unwrap()
+        .trim_matches(|c| c == '\"' || c == '\'')
+        .to_string();
 
     let input_path = Path::new(&input);
     if !input_path.is_file() {
