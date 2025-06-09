@@ -227,6 +227,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "hermit-abi"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f154ce46856750ed433c8649605bf7ed2de3bc35fd9d2a9f30cddd873c80cb08"
+
+[[package]]
 name = "indenter"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -310,6 +316,7 @@ dependencies = [
  "dialoguer",
  "eyre",
  "indicatif",
+ "num_cpus",
  "parking_lot",
  "rayon",
  "re-tex",
@@ -411,6 +418,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -504,6 +521,7 @@ dependencies = [
 [[package]]
 name = "re-tex"
 version = "0.1.0"
+source = "git+https://github.com/eigeen/re-tex.git?branch=main#8d0278fa1064791e2e58049c55f9c9b784b53d62"
 dependencies = [
  "better_default",
  "byteorder",
@@ -524,6 +542,7 @@ dependencies = [
 [[package]]
 name = "ree-pak-core"
 version = "0.4.0"
+source = "git+https://github.com/eigeen/ree-pak-rs.git?branch=main#cfcab9d81f67164e34c9a34ae6df2031b827130f"
 dependencies = [
  "bitflags",
  "byteorder",

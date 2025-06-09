@@ -13,7 +13,10 @@ use colored::Colorize;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::{
+    ThreadPoolBuilder,
+    iter::{IntoParallelRefIterator, ParallelIterator},
+};
 use re_tex::tex::Tex;
 use ree_pak_core::{
     filename::{FileNameExt, FileNameTable},
@@ -76,6 +79,23 @@ fn main_entry() -> eyre::Result<()> {
         .unwrap();
     let use_feature_clone = use_feature_clone == 1;
 
+    // Get thread count from user
+    let default_threads = num_cpus::get();
+    let thread_count: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!(
+            "Number of threads to use (default: {})",
+            default_threads
+        ))
+        .default(default_threads)
+        .interact()
+        .unwrap();
+
+    // Configure rayon thread pool
+    ThreadPoolBuilder::new()
+        .num_threads(thread_count)
+        .build_global()
+        .map_err(|e| eyre::eyre!("Failed to configure thread pool: {}", e))?;
+
     println!("Loading embedded file name table...");
     let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
 
@@ -84,15 +104,17 @@ fn main_entry() -> eyre::Result<()> {
 
     println!("Reading pak archive...");
     let pak_archive = ree_pak_core::read::read_archive(&mut reader)?;
-    let archive_reader = PakArchiveReader::new(reader, &pak_archive);
-    let archive_reader_mtx = Mutex::new(archive_reader);
+
+    // Store the input path for creating multiple readers
+    let input_path_arc = Arc::new(input_path.to_path_buf());
+    let pak_archive_arc = Arc::new(pak_archive);
 
     // filtered entries
     let entries = if use_full_package_mode {
-        pak_archive.entries().iter().collect::<Vec<_>>()
+        pak_archive_arc.entries().iter().collect::<Vec<_>>()
     } else {
         println!("Filtering entries...");
-        pak_archive
+        pak_archive_arc
             .entries()
             .iter()
             .filter(|entry| is_tex_file(entry.hash(), &filename_table))
@@ -119,19 +141,24 @@ fn main_entry() -> eyre::Result<()> {
     let pak_writer_mtx1 = Arc::clone(&pak_writer_mtx);
     let bar1 = bar.clone();
     let bytes_written = AtomicUsize::new(0);
+    let filename_table_arc = Arc::new(filename_table);
+    let pak_archive_arc1 = Arc::clone(&pak_archive_arc);
+
     let err = entries
         .par_iter()
         .try_for_each(move |&entry| -> eyre::Result<()> {
             let pak_writer_mtx = &pak_writer_mtx1;
             let bar = &bar1;
-            // read raw tex file
-            // parse tex file
-            let mut entry_reader = {
-                let mut archive_reader = archive_reader_mtx.lock();
-                archive_reader.owned_entry_reader(entry.clone())?
-            };
 
-            if !is_tex_file(entry.hash(), &filename_table) {
+            // Create a new file reader for each thread to avoid lock contention
+            let file = fs::File::open(&*input_path_arc)?;
+            let reader = io::BufReader::new(file);
+            let mut archive_reader = PakArchiveReader::new(reader, &pak_archive_arc1);
+
+            // read raw tex file
+            let mut entry_reader = archive_reader.owned_entry_reader(entry.clone())?;
+
+            if !is_tex_file(entry.hash(), &filename_table_arc) {
                 // plain file, just copy
                 let mut buf = vec![];
                 std::io::copy(&mut entry_reader, &mut buf)?;
